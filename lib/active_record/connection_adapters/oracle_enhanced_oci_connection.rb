@@ -219,6 +219,8 @@ module ActiveRecord
         nls_length_semantics = config[:nls_length_semantics] || 'CHAR'
         # get session time_zone from configuration or from TZ environment variable
         time_zone = config[:time_zone] || ENV['TZ']
+        
+        schema = config[:schema]
 
         conn = OCI8.new username, password, database, privilege
         conn.exec %q{alter session set nls_date_format = 'YYYY-MM-DD HH24:MI:SS'}
@@ -229,6 +231,7 @@ module ActiveRecord
         conn.exec "alter session set cursor_sharing = #{cursor_sharing}" rescue nil
         conn.exec "alter session set nls_length_semantics = '#{nls_length_semantics}'"
         conn.exec "alter session set time_zone = '#{time_zone}'" unless time_zone.blank?
+        conn.exec "alter session set current_schema = #{schema}" unless schema.blank?
         conn
       end
     end
