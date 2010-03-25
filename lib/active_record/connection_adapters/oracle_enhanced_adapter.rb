@@ -284,6 +284,7 @@ module ActiveRecord
     #   (meaning that size specifies number of characters and not bytes)
     # * <tt>:time_zone</tt> - database session time zone
     #   (it is recommended to set it using ENV['TZ'] which will be then also used for database session time zone)
+    # * <tt>:schema</tt> - database schema to use
     class OracleEnhancedAdapter < AbstractAdapter
 
       ##
@@ -748,15 +749,19 @@ module ActiveRecord
       def current_user
         select_value("select sys_context('userenv','session_user') from dual")
       end
+      
+      def current_schema
+        select_value("select sys_context('userenv','current_schema') from dual")
+      end
 
       # Default tablespace name of current user
       def default_tablespace
-        select_value("select lower(default_tablespace) from user_users where username = sys_context('userenv','session_user')")
+        select_value("select lower(default_tablespace) from user_users where username = sys_context('userenv','current_schema')")
       end
 
       def tables(name = nil) #:nodoc:
         # changed select from user_tables to all_tables - much faster in large data dictionaries
-        select_all("select decode(table_name,upper(table_name),lower(table_name),table_name) name from all_tables where owner = sys_context('userenv','session_user')").map {|t| t['name']}
+        select_all("select decode(table_name,upper(table_name),lower(table_name),table_name) name from all_tables where owner = sys_context('userenv','current_schema')").map {|t| t['name']}
       end
 
       cattr_accessor :all_schema_indexes #:nodoc:
@@ -1206,7 +1211,7 @@ module ActiveRecord
         end
 
         # changed select from user_tables to all_tables - much faster in large data dictionaries
-        select_all("select table_name from all_tables where owner = sys_context('userenv','session_user') order by 1").inject(s) do |structure, table|
+        select_all("select table_name from all_tables where owner = sys_context('userenv','current_schema') order by 1").inject(s) do |structure, table|
           table_name = table['table_name']
           virtual_columns = virtual_columns_for(table_name)
           ddl = "create#{ ' global temporary' if temporary_table?(table_name)} table #{table_name} (\n "
@@ -1273,7 +1278,7 @@ module ActiveRecord
               on a.constraint_name = c.constraint_name 
            where c.table_name = '#{table.upcase}' 
              and c.constraint_type = 'P'
-             and c.owner = sys_context('userenv', 'session_user')
+             and c.owner = sys_context('userenv', 'current_schema')
         SQL
         pks.each do |row|
           opts[:name] = row['constraint_name']
@@ -1291,7 +1296,7 @@ module ActiveRecord
               on a.constraint_name = c.constraint_name 
            where c.table_name = '#{table.upcase}' 
              and c.constraint_type = 'U'
-             and c.owner = sys_context('userenv', 'session_user')
+             and c.owner = sys_context('userenv', 'current_schema')
         SQL
         uks.each do |uk|
           keys[uk['constraint_name']] ||= []
@@ -1303,7 +1308,7 @@ module ActiveRecord
       end
       
       def structure_dump_fk_constraints #:nodoc:
-        fks = select_all("select table_name from all_tables where owner = sys_context('userenv','session_user') order by 1").map do |table|
+        fks = select_all("select table_name from all_tables where owner = sys_context('userenv','current_schema') order by 1").map do |table|
           if respond_to?(:foreign_keys) && (foreign_keys = foreign_keys(table["table_name"])).any?
             foreign_keys.map do |fk|
               column = fk.options[:column] || "#{fk.to_table.to_s.singularize}_id"
@@ -1322,14 +1327,14 @@ module ActiveRecord
         select_all("select distinct name, type 
                      from all_source 
                     where type in ('PROCEDURE', 'PACKAGE', 'PACKAGE BODY', 'FUNCTION', 'TRIGGER', 'TYPE') 
-                      and  owner = sys_context('userenv','session_user') order by type").each do |source|
+                      and  owner = sys_context('userenv','current_schema') order by type").each do |source|
           ddl = "create or replace   \n "
           lines = select_all(%Q{
                   select text
                     from all_source
                    where name = '#{source['name']}'
                      and type = '#{source['type']}'
-                     and owner = sys_context('userenv','session_user')
+                     and owner = sys_context('userenv','current_schema')
                    order by line 
                 }).map do |row|
             ddl << row['text'] if row['text'].size > 1
@@ -1349,7 +1354,7 @@ module ActiveRecord
         # export synonyms 
         select_all("select owner, synonym_name, table_name, table_owner 
                       from all_synonyms  
-                     where owner = sys_context('userenv','session_user') ").each do |synonym|
+                     where owner = sys_context('userenv','current_schema') ").each do |synonym|
           ddl = "create or replace #{synonym['owner'] == 'PUBLIC' ? 'PUBLIC' : '' } SYNONYM #{synonym['synonym_name']} for #{synonym['table_owner']}.#{synonym['table_name']}"
           structure << ddl << STATEMENT_TOKEN
         end
@@ -1381,14 +1386,14 @@ module ActiveRecord
         end
 
         # changed select from user_tables to all_tables - much faster in large data dictionaries
-        select_all("select table_name from all_tables where owner = sys_context('userenv','session_user') order by 1").inject(s) do |drop, table|
+        select_all("select table_name from all_tables where owner = sys_context('userenv','current_schema') order by 1").inject(s) do |drop, table|
           drop << "drop table #{table.to_a.first.last} cascade constraints;\n\n"
         end
       end
       
       def temp_table_drop #:nodoc:
         # changed select from user_tables to all_tables - much faster in large data dictionaries
-        select_all("select table_name from all_tables where owner = sys_context('userenv','session_user') and temporary = 'Y' order by 1").inject('') do |drop, table|
+        select_all("select table_name from all_tables where owner = sys_context('userenv','current_schema') and temporary = 'Y' order by 1").inject('') do |drop, table|
           drop << "drop table #{table.to_a.first.last} cascade constraints;\n\n"
         end
       end
